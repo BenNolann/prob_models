@@ -1,0 +1,120 @@
+---
+title: "Kimura 2-parameter model"
+author: "Ben Nolan"
+date: "4/18/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Using the Kimura 2-parameter model to calculate maximum-likelihood for genetic distance
+
+```{r, include=FALSE}
+#load in the libraries
+library(expm)
+library(MASS)
+library(optimx)
+library(seqinr)
+```
+
+
+For the kimura 2-parameter model, the `kappa` (alpha:beta ratio) and `t` (time) parameters are optimised from the maximum value of genetic distance from two sequences, using optimx. `t` is scaled to be equal to 1 mutation per unit time, allowing the calculation of genetic distance.
+
+```{r}
+#Function to convert nucleotides to numbers
+s2n <- function(seq){
+  num_seq = c()
+  nucs <- c("A", "C", "G", "T")
+  #split into vector
+  seq_split = unlist(strsplit(seq, ""))
+  #convert to numbers 1:4
+  for(i in 1:length(seq_split)){
+      num_seq[i] <- match(seq_split[i], nucs)
+  }
+  return(num_seq)
+}
+```
+
+```{r}
+kimura2 <- function(pars, seq_a, seq_b){
+  #kappa=alpha/beta ratio
+  #t=time interval
+  k <- pars[1]
+  t <- pars[2]
+  
+  #alpha and beta
+  a = k/(2+k)
+  b = 1/(2+k)
+  
+  #calculate  Generator matrix 
+  G = matrix(c(-2*b-a, b, a, b,
+               b, -2*b-a, b, a,
+               a, b, -2*b-a, b,
+               b, a, b, -2*b-a),
+             c(4,4))
+  
+  #scale G so that the sum of every off diagonal position in each row equals 1
+  #pi=1/4 under kimura 2-parameter; 1/4*(4*a+8*b) = 2*b + a
+  G_scaled = G / (2*b + a)
+
+  #calculate TPM
+  P = expm(t * G_scaled)
+   #calculate probability of any aligned pair of sequences
+   #input sequences converted to numbers using s2n function
+   seq_a = s2n(seq_a)
+   seq_b = s2n(seq_b)
+   
+   length = length(seq_a)
+  
+   #calculate the genetic distance
+   #create variable
+   prob = 1
+   #add probabilities for any two sequences
+   for(i in 1:length){
+     prob = prob * P[seq_a[i], seq_b[i]]
+   }
+
+  return(prob)
+}
+
+```
+
+### Example
+
+Obtain a maximum likelihood estimate of the genetic distance of the following two sequences using the kimura 2-parameter model:
+
+```
+A G T C C A T G A T
+A C G T C G T G C T
+```
+
+```{r}
+#maximum likelihood estimate of the k (kappa, or alpha/beta ratio) 
+#and t (time which is scaled to be equivalent to genetic distance)
+
+seq_a = "AGTCCATGAT"
+seq_b = "ACGTCGTGCT"
+
+#Using optimx to find the maximum likelihood 
+optimx(c(k=1, t=1), kimura2, seq_a=seq_a, seq_b=seq_b, control = list(maximize=T))
+```
+
+
+Here, `t` is scaled to be 1 mutational change per unit of time. `t` is equivalent to genetic distance. In this particular test of:
+
+```
+A G T C C A T G A T
+A C G T C G T G C T
+```
+
+The genetic distance is 0.83 under the Nelder-Mead model, or 0.822 under the BFGS. 
+
+* The maximum likelihood estimate of the genetic distance (Nelder-Mead), given the above pair of sequences is:
+  + **Probability of observed data:** 4.218750e-06
+  + **t:** 0.83
+  + **k:** 1.63.
+

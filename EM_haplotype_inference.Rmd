@@ -1,0 +1,184 @@
+---
+title: "Haplotype Inference with Expectation Maximization"
+author: "Ben Nolan"
+date: "03/05/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F}
+library(gtools)
+library(tidyverse)
+```
+
+
+## Expectation Maximization (EM) Algorithm
+
+Expectation maximization function that returns the maximum likelihood haplotype after `n` iterations, for each of the `m` genotypes. Results include a dataframe with `j` being the first haplotype `k` being second haplotype for the maximum likelihood pair for each genotype. The dataframe includes the log probability of the final iteration. The second dataframe includes all non-zero haplotypes with `theta` values in the final iteration.
+
+
+```{r}
+exp_maximiz <- function(g, iterations){
+  
+########### Possible Haplotypes ##################
+
+#matrix of possible haplotypes using 'gtools'
+h=permutations(2,(dim(g)[2]),v=c(0,1),repeats.allowed=TRUE)
+
+########### Paired Haplotypes ####################
+
+#determine viable haplotype pairs for each genotype
+glist=c()
+#initialise vector for haplotypes
+n <- c()
+for(i in 1:nrow(g)){
+  hap_total <- data.frame() 
+  v <- c() 
+  for(j in 1:nrow(h)){ #for each haplotype
+    for(k in 1:nrow(h)){ #for each other haplotype
+      if(all(h[j,]+h[k,] == g[i,])){ #determine the haploid pairs
+        pair <- paste(j, k, sep = "_")
+        pair_rev <- paste(k, j, sep = "_")
+        if(pair %in% v | pair_rev %in% v){ #if pair already found, skip
+          break
+        }else{
+        v <- c(v, pair) #vector of each found haplotype; restarts each genotype
+        n <- c(n, j) #vector of each found haplotype
+        n <- c(n, k)
+        #create dataframe for found pair
+        hap <- data.frame(j=j, k=k, thetaj=0, thetak=0, prob=0) 
+        #bind to dataframe for genotype
+        hap_total <- rbind(hap, hap_total) 
+        glist[[i]] <- hap_total #create dataframe with all pairs 
+        #for each row, and add to list resulting in a list of dataframes, 
+        #each entry containing genotype with matching haplotypes and theta 
+        #value for the first and second haplotype in each pair, and the 
+        #probability of that pair.
+        }
+      }
+    }
+  }
+}
+
+########### Expectation Maximization ##################
+
+########### Initialize ################################
+#total number of haplotypes
+hap_num = length(unique(n))
+
+#for each genotype
+for(i in 1:nrow(g)){
+  #for each haplotype
+  for(j in 1:nrow(glist[[i]])){ 
+    
+    glist[[i]][j,]$thetaj = 1/hap_num #initial probability = 1/total viable haplotypes
+    glist[[i]][j,]$thetak = 1/hap_num
+  }
+}
+
+########### Iteration #################################
+
+for(iter in 1:iterations){ #for each iteration
+  n <- data.frame(j=seq(1:nrow(h)), theta=0) #create empty haplotype dataframe for theta updates 
+  for(i in 1:nrow(g)){ #for each genotype
+    demon = 0 
+    #calculate demoninator for Bayes rule calculation
+    for(j in 1:nrow(glist[[i]])){ #for each haplotype
+        demon = demon + (glist[[i]][j,]$thetaj)*(glist[[i]][j,]$thetak) 
+    }
+    
+    #bayes rule equation and calculate probability for each haplotype pair
+    for(j in 1:nrow(glist[[i]])){ 
+      glist[[i]][j,]$prob <- (glist[[i]][j,]$thetaj)*(glist[[i]][j,]$thetak) / demon
+      
+      
+      #for each haplotype, match the first haplotype with the 'n' dataframe and add theta
+      n$theta[(match(glist[[i]][j,]$j, n$j))] <- round((n$theta[(match(glist[[i]][j,]$j, n$j))] +
+                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) #why is this 10??
+      #same as above, except for the second haplotype
+      n$theta[(match(glist[[i]][j,]$k, n$j))] <- round((n$theta[(match(glist[[i]][j,]$k, n$j))] + 
+                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) #why is this 10??
+    } 
+  }
+   # after iteration, take final theta value in 'n' 
+   #dataframe and update theta in the list of dataframes
+    for(i in 1:nrow(g)){
+      for(j in 1:nrow(glist[[i]])){
+        glist[[i]][j,]$thetaj <- n$theta[(match(glist[[i]][j,]$j, n$j))]
+        glist[[i]][j,]$thetak <- n$theta[(match(glist[[i]][j,]$k, n$j))]
+      }
+    }
+}
+  
+  #take out haplotype pairs with highest probability
+  #and also determine the log likelihood
+  haps_list <- list()
+  lik_total = 0
+  for(i in 1:nrow(g)){  
+    #reset for each genotype
+    lik=0
+    hap <- glist[[i]] %>% slice_max(prob) 
+    hap$genotype <- i
+    haps_list[[i]] <- hap
+    #logL = P(Gi|theta) for all i
+    for(j in 1:nrow(glist[[i]])){
+    lik = lik + (2 * (glist[[i]][j,]$thetaj)*(glist[[i]][j,]$thetak))
+    }
+    
+    ifelse((i==1), (lik_total = lik), (lik_total = lik_total * lik))
+  }
+  #obtain log likelihood
+  log_lik = log(lik_total)
+  
+  
+  
+  final_haps <- bind_rows(haps_list)
+  #add dataframe containing all non-zero haplotypes
+  #haplotypes and theta values for each after all iterations
+  final_theta <- n[which(n$theta!=0),]
+  #convert haplotype matrix into df with one column
+  h_df<-data.frame(h)
+  h_df<- h_df %>% unite(haplotype, 
+                        colnames(h_df)[1]:colnames(h_df)[length(colnames(h_df))],
+                        sep="")
+  #shows haplotype beside each haplotype number in final dataframe
+  final_theta$haplotype=0
+  for(i in 1:nrow(final_theta)){
+    haplotype=final_theta[i,]$j
+    final_theta$haplotype[i] <- h_df[haplotype,]
+  }
+  
+  
+  log_prob <- data.frame(j=0, k=0, thetaj=0, thetak=0, prob=log_lik, genotype='LogProb')
+  final_haps <- rbind(log_prob, final_haps)
+  list <- list(final_haps, final_theta)
+  return(list)
+}
+```
+
+## Example
+
+#### Finding the maximum likelihood haplotypes of the following genotypes
+
+```
+g1:    0    1    1    2 
+g2:    1    0    2    2  
+g3:    0    1    2    2 
+g4:    1    1    2    2 
+g5:    1    0    2    2 
+```
+
+```{r}
+#input genotypes as a matrix
+g=matrix(c(0,1,0,1,1,1,0,1,1,0,1,2,2,2,2,2,2,2,2,2),c(5,4))
+
+#run EM algorithm with n iterations
+exp_maximiz(g=g, iterations = 5)
+
+```
+
