@@ -99,10 +99,10 @@ for(iter in 1:iterations){ #for each iteration
       
       #for each haplotype, match the first haplotype with the 'n' dataframe and add theta
       n$theta[(match(glist[[i]][j,]$j, n$j))] <- round((n$theta[(match(glist[[i]][j,]$j, n$j))] +
-                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) #why is this 10??
+                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) 
       #same as above, except for the second haplotype
       n$theta[(match(glist[[i]][j,]$k, n$j))] <- round((n$theta[(match(glist[[i]][j,]$k, n$j))] + 
-                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) #why is this 10??
+                                                          (glist[[i]][j,]$prob)/(nrow(g)*2)),3) 
     } 
   }
    # after iteration, take final theta value in 'n' 
