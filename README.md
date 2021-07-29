@@ -1,4 +1,4 @@
-# prob_models
+# Probabilistic Models
 
 This repo contains description and usage of: 
  * Expectation Maximization algorithm for haplotype phasing of genotypes very short in length and amount. For demonstrational purpose. 
